@@ -1,16 +1,19 @@
-/** Return a unique selector for a specific element. */
-const getUniqueSelector = (/** @type {Element} */ element) => {
-	/** Unique selector for this element */
+// @ts-check
+
+/**
+ * Return a unique selector for a specific element.
+ * @arg {Element} element
+ */
+function getPositionalSelector(element){
 	let selector = ''
 
-	/** @type {Element} */
 	let parent
 
-	while (parent = element.parentElement) {
-		/** @type {number} Nth-child order of the element. */
-		const nthChild = Array.prototype.indexOf.call(parent.children, element) + 1
+	while (parent = /** @type {Element} */ element.parentElement) {
+    /** @type {Number} */
+    const index = Array.prototype.indexOf.call(parent.children, element)
 
-		selector = ` > :nth-child(${nthChild})${selector}`
+		selector = ` > :nth-child(${ index + 1 })${ selector }`
 
 		element = parent
 	}
@@ -18,54 +21,58 @@ const getUniqueSelector = (/** @type {Element} */ element) => {
 	return `:root${ selector }`
 }
 
+/** @type {WeakMap.<CSSRule, CSSRule>} */
 const supportMap = new WeakMap()
 
 function polyfillScope(){
 	for (const sheet of document.styleSheets)
 		for (let index = 0; index < sheet.cssRules.length; ++index) {
-			const rule = sheet.cssRules[index]
+			const supportsRule = sheet.cssRules[index]
 
-			if (rule.type !== 12)
+			if (!(supportsRule instanceof CSSSupportsRule))
         continue
 
-      const match = conditionText.match(/^\(polyfill @scope \((.+) to\((.+)\)\)\)$/)
+      /** @type {RegExpMatchArray | null} */
+      const match = supportsRule.conditionText.match(/^\(polyfill @scope \((.+) to\((.+)\)\)\)$/)
 
-      if (!match || supportMap.has(rule))
+      if (!match || supportMap.has(supportsRule))
         continue
 
       const [ , from, to ] = match
-      const mediaRule = sheet.cssRules[
-        sheet.insertRule(
-          `@media ${
-            `@scope ${from} to(${to})`.replace(/[^\w]/g, '\\$&')
-          },all${
-            rule.cssText.slice('@supports '.length + rule.conditionText.length)
-          }`,
 
-          index++
-        )
-      ]
+      const mediaRule = /** @type {CSSMediaRule} */ (sheet.cssRules[sheet.insertRule(
+        `@media ${
+          `@scope ${ from } to(${ to })`.replace(/[^\w]/g, '\\$&')
+        },all${
+          supportsRule.cssText.slice('@supports '.length + supportsRule.conditionText.length)
+        }`,
 
-      supportMap.set(rule, mediaRule)
-      supportMap.set(mediaRule, rule)
+        index++
+      )])
 
+      supportMap.set(supportsRule, mediaRule)
+      supportMap.set(mediaRule, supportsRule)
+
+      /** @type {Element[]} */
       const fromElements = Array.from(document.querySelectorAll(from))
 
-      for (const innerRule of mediaRule.cssRules) {
-        if (innerRule.type !== 1)
+      for (const styleRule of mediaRule.cssRules) {
+        if (!(styleRule instanceof CSSStyleRule))
           return
 
         const narrElements = fromElements.flatMap(
-          from => Array.from(
-            from.querySelectorAll(`:is(${ innerRule.selectorText }):not(:scope :is(${ to }) *)`)
-          )
+          from =>
+            /** @type {Element[]} */
+            Array.from(
+              from.querySelectorAll(`:is(${ styleRule.selectorText }):not(:scope :is(${ to }) *)`)
+            )
         )
 
-        innerRule.selectorText += `:where(${ narrElements.map(getUniqueSelector) })`
+        styleRule.selectorText += `:where(${ narrElements.map(getPositionalSelector) })`
       }
 		}
 }
 
-new MutationObserver(polyfillScope).observe(document.documentElement, { childList: true, subtree: true })
+new MutationObserver(polyfillScope).observe(document.documentElement, {childList: true, subtree: true})
 
 polyfillScope()
